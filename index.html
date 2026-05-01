@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>罗马数字播放器</title>
+    <style>
+        :root {
+            --bg: #1a1a2e;
+            --surface: #16213e;
+            --surface2: #0f3460;
+            --text: #e0e0e0;
+            --text-secondary: #a0a0b8;
+            --accent: #e94560;
+            --accent2: #f5c518;
+            --border: #2a2a4a;
+            --shadow: 0 8px 32px rgba(0,0,0,0.4);
+            --radius: 16px;
+            --radius-sm: 10px;
+            --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
+            --font-display: 'Georgia', 'Times New Roman', 'Noto Serif', 'Songti SC', serif;
+        }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: 'Inter', 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+            background: var(--bg);
+            background-image: radial-gradient(ellipse at 50% 30%, rgba(233,68,96,0.08) 0%, transparent 60%),
+                radial-gradient(ellipse at 30% 70%, rgba(15,52,96,0.3) 0%, transparent 50%),
+                radial-gradient(ellipse at 70% 60%, rgba(245,197,24,0.04) 0%, transparent 50%);
+            color: var(--text);
+            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+            padding: 20px; user-select: none; -webkit-tap-highlight-color: transparent; overflow-x: hidden;
+            transition: background 0.3s ease;
+        }
+        body.fullscreen-active { background: #000; background-image: none; padding: 0; }
+        .container {
+            width: 100%; max-width: 820px; display: flex; flex-direction: column; gap: 20px;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        body.fullscreen-active .container { opacity: 0; pointer-events: none; position: absolute; }
+        .header { text-align: center; }
+        .header h1 {
+            font-family: var(--font-display); font-size: clamp(1.4rem,2.5vw,1.8rem); font-weight:700;
+            letter-spacing:0.04em; background: linear-gradient(135deg, #f5c518 0%, #e94560 40%, #c084fc 70%, #f5c518 100%);
+            background-size:200% auto; -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+            background-clip:text; animation:shimmer 4s ease-in-out infinite;
+        }
+        @keyframes shimmer { 0%,100%{background-position:0% center;} 50%{background-position:200% center;} }
+        .header .subtitle { font-size:0.8rem; color:var(--text-secondary); letter-spacing:0.06em; margin-top:2px; }
+
+        .display-card {
+            background: var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+            padding: clamp(24px,4vw,40px) clamp(16px,3vw,32px); text-align:center; position:relative;
+            overflow:hidden; box-shadow:var(--shadow); min-height:160px;
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            transition:all var(--transition);
+        }
+        .display-card::before {
+            content:''; position:absolute; inset:0; border-radius:var(--radius); border:1px solid transparent;
+            background:linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(255,255,255,0.02) 100%);
+            pointer-events:none; z-index:0;
+        }
+        .display-card.playing { border-color:rgba(233,68,96,0.4); box-shadow:0 8px 40px rgba(233,68,96,0.15), var(--shadow); }
+        .display-card.paused { border-color:rgba(245,197,24,0.35); box-shadow:0 8px 40px rgba(245,197,24,0.1), var(--shadow); }
+
+        .fullscreen-btn {
+            position:absolute; top:12px; right:12px; z-index:10; background:rgba(0,0,0,0.4);
+            border:1px solid rgba(255,255,255,0.2); color:#fff; width:36px; height:36px; border-radius:50%;
+            display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:1rem;
+            backdrop-filter:blur(6px); transition:all var(--transition);
+        }
+        .fullscreen-btn:hover { background:rgba(255,255,255,0.15); border-color:rgba(255,255,255,0.5); transform:scale(1.08); }
+
+        .roman-display {
+            font-family: var(--font-display); font-weight:700; line-height:1.4; letter-spacing:0.06em;
+            word-break:break-all; transition:font-size 0.25s ease; z-index:1;
+            display:flex; flex-wrap:wrap; justify-content:center; align-items:baseline; gap:0;
+            color:#e0e0e0; max-width:100%; position:relative;
+        }
+        .roman-display .char-span {
+            display:inline-block; transition:transform 0.12s ease, opacity 0.12s ease, color 0.3s ease; will-change:transform;
+        }
+        .roman-display.pop .char-span { animation:charPop 0.18s ease-out; }
+        @keyframes charPop { 0%{transform:scale(0.7); opacity:0.3;} 60%{transform:scale(1.08); opacity:1;} 100%{transform:scale(1); opacity:1;} }
+        .roman-display.flash .char-span { animation:charFlash 0.1s ease-out; }
+        @keyframes charFlash { 0%{transform:scale(0.85); opacity:0.5; filter:brightness(1.8);} 100%{transform:scale(1); opacity:1; filter:brightness(1);} }
+
+        .overline-group {
+            display:inline-flex; flex-wrap:wrap; justify-content:center; align-items:baseline;
+            border-top:2px solid; padding-top:2px; position:relative;
+        }
+        .level-marker {
+            position:absolute; top:-0.8em; left:50%; transform:translateX(-50%);
+            font-size:0.4em; line-height:1; white-space:nowrap; font-weight:700;
+            color:inherit; background:#000; padding:0 2px; border-radius:3px;
+        }
+        .vertical-bar { display:inline-block; margin-left:2px; font-size:inherit; line-height:1; }
+
+        .arabic-label { font-size:0.85rem; color:var(--text-secondary); margin-top:8px; letter-spacing:0.04em; z-index:1; font-weight:500; }
+        .progress-row { display:flex; align-items:center; gap:12px; z-index:1; margin-top:8px; width:100%; max-width:400px; }
+        .progress-bar-wrap { flex:1; height:4px; background:rgba(255,255,255,0.08); border-radius:2px; overflow:hidden; }
+        .progress-bar-fill { height:100%; background:linear-gradient(90deg, #e94560, #f5c518); border-radius:2px; transition:width 0.15s linear; }
+        .progress-text { font-size:0.7rem; color:var(--text-secondary); white-space:nowrap; min-width:60px; text-align:right; font-variant-numeric:tabular-nums; font-family:monospace; }
+
+        .controls-row { display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap; }
+        .btn {
+            display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:10px 18px; border-radius:50px;
+            border:1px solid var(--border); background:var(--surface2); color:var(--text); cursor:pointer; font-size:0.9rem;
+            font-weight:500; letter-spacing:0.03em; transition:all var(--transition); white-space:nowrap; font-family:inherit;
+        }
+        .btn:hover { background:#1a3a5c; border-color:rgba(255,255,255,0.3); transform:translateY(-1px); box-shadow:0 4px 16px rgba(0,0,0,0.3); }
+        .btn:active { transform:scale(0.96); transition:transform 0.08s ease; }
+        .btn-play { font-size:1.3rem; width:56px; height:56px; border-radius:50%; padding:0; background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 4px 20px rgba(233,68,96,0.35); }
+        .btn-play:hover { background:#f0506e; border-color:#f0506e; box-shadow:0 6px 28px rgba(233,68,96,0.5); }
+        .btn-play.playing { background:#f5c518; border-color:#f5c518; color:#1a1a2e; box-shadow:0 4px 20px rgba(245,197,24,0.4); }
+        .btn-sm { padding:8px 14px; font-size:0.8rem; }
+        .btn-icon { width:38px; height:38px; border-radius:50%; padding:0; font-size:1.1rem; }
+        .btn-toggle { border:1px solid var(--border); background:transparent; font-size:0.75rem; }
+        .btn-toggle.active { background:rgba(233,68,96,0.2); border-color:var(--accent); color:#fff; box-shadow:0 0 12px rgba(233,68,96,0.2); }
+
+        .settings-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:20px 22px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:16px; }
+        .settings-section { display:flex; flex-direction:column; gap:8px; }
+        .settings-label { font-size:0.75rem; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-secondary); display:flex; align-items:center; gap:6px; }
+        .range-inputs { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+        .range-inputs input[type="text"] {
+            width:130px; padding:9px 10px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--bg);
+            color:var(--text); font-size:0.9rem; text-align:center; font-family:inherit; transition:all var(--transition);
+        }
+        .range-inputs input[type="text"]:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px rgba(233,68,96,0.1); }
+        .range-sep { color:var(--text-secondary); font-weight:500; }
+
+        .slider-group { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+        .slider-group input[type="range"] { flex:1; min-width:120px; -webkit-appearance:none; height:6px; border-radius:3px; background:rgba(255,255,255,0.1); }
+        .slider-group input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:24px; height:24px; border-radius:50%; background:var(--accent); cursor:pointer; border:3px solid #fff; box-shadow:0 2px 10px rgba(0,0,0,0.3); }
+        .rate-display { font-weight:700; font-size:1rem; min-width:60px; text-align:center; color:#f5c518; font-family:monospace; }
+
+        .color-row { display:flex; flex-wrap:wrap; gap:10px; }
+        .color-chip { display:flex; align-items:center; gap:5px; background:var(--bg); border-radius:30px; padding:5px 10px 5px 5px; border:1px solid var(--border); cursor:pointer; }
+        .color-chip input[type="color"] { -webkit-appearance:none; width:30px; height:30px; border-radius:50%; border:2px solid rgba(255,255,255,0.2); cursor:pointer; background:transparent; }
+        .color-chip .char-label { font-weight:700; font-size:0.85rem; font-family:var(--font-display); color:#ccc; }
+
+        .preset-btns { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
+        .preset-btn { padding:6px 13px; border-radius:20px; border:1px solid var(--border); background:transparent; color:var(--text-secondary); cursor:pointer; font-size:0.7rem; }
+        .preset-btn.active-preset { border-color:var(--accent2); color:#fff; background:rgba(245,197,24,0.12); }
+
+        .kbd-hint { font-size:0.65rem; color:var(--text-secondary); text-align:center; opacity:0.7; }
+        .kbd-hint kbd { display:inline-block; padding:2px 7px; border-radius:4px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); font-size:0.65rem; }
+
+        .display-card.fullscreen-mode {
+            position:fixed; top:0; left:0; width:100vw; height:100dvh; z-index:9999; background:#000;
+            border:none; border-radius:0; padding:20px; box-shadow:none; display:flex; align-items:center; justify-content:center;
+        }
+        .display-card.fullscreen-mode::before { display:none; }
+        .display-card.fullscreen-mode .fullscreen-btn { top:20px; right:20px; background:rgba(255,255,255,0.08); border-color:rgba(255,255,255,0.25); z-index:10000; }
+        .display-card.fullscreen-mode .arabic-label,
+        .display-card.fullscreen-mode .progress-row { display:none; }
+        .display-card.fullscreen-mode .roman-display {
+            max-width:90vw; max-height:90vh; overflow-wrap:anywhere; word-break:break-all;
+            line-height:1.3; text-align:center; align-content:center;
+        }
+        @media (max-width:600px) {
+            .container { gap:14px; }
+            .display-card { padding:20px 14px; min-height:120px; border-radius:var(--radius-sm); }
+            .btn { padding:8px 12px; font-size:0.78rem; }
+            .btn-play { width:46px; height:46px; font-size:1.1rem; }
+            .btn-icon { width:32px; height:32px; font-size:0.9rem; }
+            .settings-panel { padding:14px; gap:12px; border-radius:var(--radius-sm); }
+            .range-inputs input[type="text"] { width:100px; padding:7px 6px; font-size:0.8rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header"><h1>罗马数字播放器</h1><p class="subtitle">V1.2.1 BY陈风就是浪</p></div>
+
+    <div class="display-card paused" id="displayCard">
+        <button class="fullscreen-btn" id="fullscreenBtn">⛶</button>
+        <div class="roman-display" id="romanDisplay"></div>
+        <div class="arabic-label" id="arabicLabel"></div>
+        <div class="progress-row">
+            <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progressFill"></div></div>
+            <span class="progress-text" id="progressText"></span>
+        </div>
+    </div>
+
+    <div class="controls-row">
+        <button class="btn btn-icon" id="btnStepBack">⏮</button>
+        <button class="btn btn-play" id="btnPlay">▶</button>
+        <button class="btn btn-icon" id="btnStepForward">⏭</button>
+        <button class="btn btn-sm" id="btnReset">↺ 重置</button>
+        <button class="btn btn-sm btn-toggle" id="btnLoop">🔁 循环</button>
+        <button class="btn btn-sm btn-toggle" id="btnReverse">🔃 反向</button>
+    </div>
+
+    <div class="settings-panel">
+        <div class="settings-section">
+            <span class="settings-label">🎯 数字范围 (任意正整数)</span>
+            <div class="range-inputs">
+                <input type="text" id="rangeStart" value="1">
+                <span class="range-sep">→</span>
+                <input type="text" id="rangeEnd" value="100">
+            </div>
+        </div>
+        <div class="settings-section">
+            <span class="settings-label">⚡ 播放速率 (fps)</span>
+            <div class="slider-group">
+                <input type="range" id="rateSlider" min="0.5" max="60" step="0.5" value="10">
+                <span class="rate-display" id="rateDisplay">10 fps</span>
+            </div>
+        </div>
+        <div class="settings-section">
+            <span class="settings-label">📏 变化步长 (每次增加/减少的数量)</span>
+            <div class="range-inputs" style="justify-content: flex-start;">
+                <input type="text" id="stepInput" value="1" style="width:180px;">
+            </div>
+        </div>
+        <div class="settings-section">
+            <span class="settings-label">🎨 字母颜色</span>
+            <div class="color-row" id="colorRow"></div>
+            <div class="preset-btns" id="presetBtns">
+                <button class="preset-btn active-preset" data-preset="rainbow">🌈 彩虹</button>
+                <button class="preset-btn" data-preset="gold">黄</button>
+                <button class="preset-btn" data-preset="ocean">蓝</button>
+                <button class="preset-btn" data-preset="fire">红</button>
+                <button class="preset-btn" data-preset="forest">绿</button>
+                <button class="preset-btn" data-preset="retro">棕</button>
+            </div>
+        </div>
+    </div>
+    <p class="kbd-hint">
+        快捷键：<kbd>空格</kbd> 播放/暂停 <kbd>←</kbd><kbd>→</kbd> 逐帧 <kbd>R</kbd> 重置 <kbd>L</kbd> 循环 <kbd>F</kbd> 全屏
+    </p>
+</div>
+
+<script>
+(() => {
+    const $ = id => document.getElementById(id);
+    const romanDisplay = $('romanDisplay'), arabicLabel = $('arabicLabel'), displayCard = $('displayCard');
+    const progressFill = $('progressFill'), progressText = $('progressText');
+    const btnPlay = $('btnPlay'), btnStepBack = $('btnStepBack'), btnStepForward = $('btnStepForward'), btnReset = $('btnReset');
+    const btnLoop = $('btnLoop'), btnReverse = $('btnReverse');
+    const rangeStartInput = $('rangeStart'), rangeEndInput = $('rangeEnd');
+    const rateSlider = $('rateSlider'), rateDisplay = $('rateDisplay');
+    const stepInput = $('stepInput');
+    const colorRow = $('colorRow'), presetBtns = $('presetBtns'), fullscreenBtn = $('fullscreenBtn');
+
+    const ROMAN_CHARS = ['I','V','X','L','C','D','M'];
+    const presets = {
+        rainbow: { I:'#FF6B6B', V:'#FF9F43', X:'#FECA57', L:'#54A0FF', C:'#5F27CD', D:'#FF6FB7', M:'#48DBFB' },
+        gold:    { I:'#FFD700', V:'#FFC107', X:'#FFB300', L:'#FFD700', C:'#FFC107', D:'#FFB300', M:'#FFD700' },
+        ocean:   { I:'#00B4D8', V:'#0077B6', X:'#023E8A', L:'#48CAE4', C:'#0096C7', D:'#00B4D8', M:'#90E0EF' },
+        fire:    { I:'#FF4500', V:'#FF6B35', X:'#FF8C42', L:'#FFD166', C:'#FF4500', D:'#FF6B35', M:'#FFD166' },
+        forest:  { I:'#2D6A4F', V:'#40916C', X:'#52B788', L:'#95D5B2', C:'#1B4332', D:'#40916C', M:'#74C69D' },
+        retro:   { I:'#8B0000', V:'#A0522D', X:'#6B4226', L:'#B8860B', C:'#8B4513', D:'#5C3317', M:'#3E2723' }
+    };
+
+    let charColors = { ...presets.rainbow }, currentPreset = 'rainbow';
+    let rangeStart = 1n, rangeEnd = 100n, currentValue = 1n, step = 1n;
+    let isPlaying = false, isLooping = false, isReversed = false, fps = 10, timerId = null, isFullscreen = false;
+
+    function basicRoman(num) {
+        const map = [
+            [1000n, 'M'], [900n, 'CM'], [500n, 'D'], [400n, 'CD'],
+            [100n, 'C'], [90n, 'XC'], [50n, 'L'], [40n, 'XL'],
+            [10n, 'X'], [9n, 'IX'], [5n, 'V'], [4n, 'IV'], [1n, 'I']
+        ];
+        let res = '';
+        for (const [val, sym] of map) {
+            while (num >= val) { res += sym; num -= val; }
+        }
+        return res;
+    }
+
+    function toRomanGroups(num) {
+        if (num < 1n) return null;
+        const groups = [];
+        let level = 0, rem = num;
+        while (rem > 0n) {
+            const remainder = rem % 1000n;
+            if (remainder > 0n) groups.unshift({ roman: basicRoman(remainder), level });
+            rem = rem / 1000n;
+            level++;
+        }
+        return groups.length ? groups : null;
+    }
+
+    function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    function renderRoman(value) {
+        const groups = toRomanGroups(value);
+        if (!groups) { romanDisplay.innerHTML = '<span style="color:#e0e0e0;">—</span>'; arabicLabel.textContent = '= ?'; return; }
+
+        let totalLen = 0;
+        groups.forEach(g => totalLen += g.roman.length);
+
+        if (isFullscreen) {
+            if (totalLen <= 8) romanDisplay.style.fontSize = '20vw';
+            else if (totalLen <= 14) romanDisplay.style.fontSize = '14vw';
+            else if (totalLen <= 22) romanDisplay.style.fontSize = '9vw';
+            else if (totalLen <= 35) romanDisplay.style.fontSize = '5vw';
+            else romanDisplay.style.fontSize = '3vw';
+        } else {
+            if (totalLen <= 4) romanDisplay.style.fontSize = 'clamp(60px, 10vw, 130px)';
+            else if (totalLen <= 7) romanDisplay.style.fontSize = 'clamp(44px, 7vw, 90px)';
+            else if (totalLen <= 10) romanDisplay.style.fontSize = 'clamp(32px, 5vw, 64px)';
+            else if (totalLen <= 16) romanDisplay.style.fontSize = 'clamp(22px, 4vw, 44px)';
+            else romanDisplay.style.fontSize = 'clamp(14px, 3vw, 28px)';
+        }
+
+        let html = '';
+        groups.forEach(g => {
+            let inner = '';
+            for (const ch of g.roman) {
+                const col = charColors[ch] || '#e0e0e0';
+                inner += `<span class="char-span" style="color:${escapeHtml(col)};">${escapeHtml(ch)}</span>`;
+            }
+            const level = g.level;
+            if (level === 0) {
+                html += inner;
+            } else if (level < 6) {
+                let wrapped = inner;
+                for (let i = 0; i < level; i++) {
+                    wrapped = `<span class="overline-group">${wrapped}</span>`;
+                }
+                html += wrapped;
+            } else {
+                const markerValue = BigInt(level) + 2n;
+                if (markerValue < 4000n) {
+                    const markerRoman = basicRoman(markerValue);
+                    html += `<span class="overline-group" style="position:relative;">${inner}<span class="level-marker">${markerRoman}</span></span>`;
+                } else {
+                    html += `<span class="overline-group">${inner}<span class="vertical-bar">|</span></span>`;
+                }
+            }
+        });
+
+        romanDisplay.innerHTML = html;
+        arabicLabel.textContent = `= ${value}`;
+    }
+
+    function triggerAnimation(type) {
+        romanDisplay.classList.remove('pop','flash'); void romanDisplay.offsetWidth;
+        romanDisplay.classList.add(type);
+        const handler = () => { romanDisplay.classList.remove(type); romanDisplay.removeEventListener('animationend', handler); };
+        romanDisplay.addEventListener('animationend', handler, {once:true});
+        setTimeout(() => romanDisplay.classList.remove(type), 250);
+    }
+
+    function updateDisplay(value, animate = 'pop') {
+        currentValue = value; renderRoman(value); updateProgress();
+        if (animate) triggerAnimation(animate);
+    }
+
+    function updateProgress() {
+        const start = isReversed ? rangeEnd : rangeStart;
+        const end = isReversed ? rangeStart : rangeEnd;
+        const total = (start > end ? start - end : end - start) + 1n;
+        const offset = (start <= end ? currentValue - start : start - currentValue) + 1n;
+        if (total > 0n) {
+            const pct = (offset * 1000n) / total;
+            progressFill.style.width = (Number(pct) / 10) + '%';
+        }
+        progressText.textContent = `${offset} / ${total}`;
+    }
+
+    function applyStepToBounds() {
+        if (step <= 0n) step = 1n;
+    }
+
+    function startPlayback() {
+        if (isPlaying) return;
+        applyStepToBounds();
+        const start = isReversed ? rangeEnd : rangeStart;
+        const end = isReversed ? rangeStart : rangeEnd;
+        if ((start > end ? start - end : end - start) + 1n <= 1n) { updateDisplay(start, 'pop'); return; }
+        if (currentValue === end && !isLooping) currentValue = start;
+        if (currentValue < (start < end ? start : end) || currentValue > (start > end ? start : end)) currentValue = start;
+        isPlaying = true; updatePlayBtn(); updateCardState(); scheduleNext();
+    }
+
+    function stopPlayback() { isPlaying = false; updatePlayBtn(); updateCardState(); clearTimeout(timerId); timerId = null; }
+    function togglePlayback() { isPlaying ? stopPlayback() : startPlayback(); }
+
+    function scheduleNext() {
+        if (!isPlaying) return;
+        timerId = setTimeout(() => { if (!isPlaying) return; advanceFrame(); scheduleNext(); }, Math.max(16, Math.round(1000/fps)));
+    }
+
+    function advanceFrame() {
+        const start = isReversed ? rangeEnd : rangeStart;
+        const end = isReversed ? rangeStart : rangeEnd;
+        const dir = start <= end ? 1n : -1n;
+        const next = currentValue + dir * step;
+        if ((dir > 0n && next > end) || (dir < 0n && next < end)) {
+            if (isLooping) {
+                currentValue = start;
+                updateDisplay(currentValue, 'flash');
+            } else {
+                currentValue = end;
+                updateDisplay(currentValue, 'pop');
+                stopPlayback();
+            }
+        } else {
+            currentValue = next;
+            updateDisplay(currentValue, fps >= 20 ? 'flash' : 'pop');
+        }
+        updateProgress();
+    }
+
+    function stepMove(dir) {
+        if (isPlaying) stopPlayback();
+        applyStepToBounds();
+        const start = isReversed ? rangeEnd : rangeStart;
+        const end = isReversed ? rangeStart : rangeEnd;
+        const stepDir = start <= end ? dir : -dir;
+        const next = currentValue + stepDir * step;
+        if ((stepDir > 0n && next > end) || (stepDir < 0n && next < start)) {
+            if (isLooping) {
+                currentValue = stepDir > 0n ? start : end;
+            } else {
+                currentValue = stepDir > 0n ? end : start;
+            }
+        } else {
+            currentValue = next;
+        }
+        updateDisplay(currentValue, 'pop');
+    }
+
+    function resetPosition() { if (isPlaying) stopPlayback(); currentValue = isReversed ? rangeEnd : rangeStart; updateDisplay(currentValue, 'pop'); }
+
+    function parseBigInt(el, fallback) {
+        try { const v = BigInt(el.value.trim()); if (v >= 1n) return v; } catch(e) {}
+        el.value = String(fallback); return fallback;
+    }
+
+    function onRangeChange() {
+        rangeStart = parseBigInt(rangeStartInput, 1n);
+        rangeEnd = parseBigInt(rangeEndInput, 100n);
+        if (isPlaying) stopPlayback();
+        currentValue = isReversed ? rangeEnd : rangeStart;
+        updateDisplay(currentValue, 'pop');
+    }
+
+    function onStepChange() {
+        let newStep = parseBigInt(stepInput, 1n);
+        if (newStep <= 0n) newStep = 1n;
+        step = newStep;
+        stepInput.value = String(step);
+    }
+
+    function onRateChange() { fps = parseFloat(rateSlider.value); rateDisplay.textContent = fps + ' fps'; if (isPlaying) { clearTimeout(timerId); scheduleNext(); } }
+
+    function buildColorChips() {
+        colorRow.innerHTML = '';
+        ROMAN_CHARS.forEach(ch => {
+            const col = charColors[ch] || '#e0e0e0';
+            const chip = document.createElement('label'); chip.className = 'color-chip';
+            const inp = document.createElement('input'); inp.type = 'color'; inp.value = col; inp.dataset.char = ch;
+            inp.addEventListener('input', e => { charColors[ch] = e.target.value; currentPreset = null; updatePresetBtns(); refreshColors(); });
+            const lbl = document.createElement('span'); lbl.className = 'char-label'; lbl.textContent = ch; lbl.style.color = col;
+            chip.append(inp, lbl); chip.addEventListener('click', e => { if (e.target !== inp) inp.click(); });
+            colorRow.appendChild(chip);
+        });
+    }
+
+    function refreshColors() { renderRoman(currentValue); }
+    function applyPreset(name) {
+        if (presets[name]) { charColors = { ...presets[name] }; currentPreset = name; }
+        colorRow.querySelectorAll('input[type="color"]').forEach(inp => { const ch = inp.dataset.char; if (charColors[ch]) inp.value = charColors[ch]; });
+        refreshColors(); updatePresetBtns();
+    }
+    function updatePresetBtns() { presetBtns.querySelectorAll('.preset-btn').forEach(b => b.classList.toggle('active-preset', b.dataset.preset === currentPreset)); }
+
+    function toggleFullscreen() {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        } else {
+            (displayCard.requestFullscreen || displayCard.webkitRequestFullscreen).call(displayCard);
+        }
+    }
+    function onFullscreenChange() {
+        isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+        displayCard.classList.toggle('fullscreen-mode', isFullscreen);
+        document.body.classList.toggle('fullscreen-active', isFullscreen);
+        fullscreenBtn.textContent = isFullscreen ? '✕' : '⛶';
+        renderRoman(currentValue);
+    }
+
+    function updatePlayBtn() { btnPlay.textContent = isPlaying ? '⏸' : '▶'; btnPlay.classList.toggle('playing', isPlaying); }
+    function updateCardState() { displayCard.classList.remove('playing','paused'); displayCard.classList.add(isPlaying ? 'playing' : 'paused'); }
+    function updateLoopBtn() { btnLoop.classList.toggle('active', isLooping); btnLoop.textContent = isLooping ? '🔁 循环中' : '🔁 循环'; }
+    function updateReverseBtn() { btnReverse.classList.toggle('active', isReversed); btnReverse.textContent = isReversed ? '🔃 反向中' : '🔃 反向'; }
+
+    btnPlay.onclick = togglePlayback;
+    btnStepForward.onclick = () => stepMove(1n);
+    btnStepBack.onclick = () => stepMove(-1n);
+    btnReset.onclick = resetPosition;
+    btnLoop.onclick = () => { isLooping = !isLooping; updateLoopBtn(); };
+    btnReverse.onclick = () => { if (isPlaying) stopPlayback(); isReversed = !isReversed; updateReverseBtn(); currentValue = isReversed ? rangeEnd : rangeStart; updateDisplay(currentValue, 'pop'); };
+    fullscreenBtn.onclick = toggleFullscreen;
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+    rangeStartInput.addEventListener('change', onRangeChange);
+    rangeEndInput.addEventListener('change', onRangeChange);
+    stepInput.addEventListener('change', onStepChange);
+    rateSlider.addEventListener('input', onRateChange);
+    presetBtns.addEventListener('click', e => { const btn = e.target.closest('.preset-btn'); if (btn) applyPreset(btn.dataset.preset); });
+
+    document.addEventListener('keydown', e => {
+        if (['input','textarea','select'].includes(document.activeElement.tagName.toLowerCase())) return;
+        switch(e.key) {
+            case ' ': e.preventDefault(); togglePlayback(); break;
+            case 'ArrowRight': e.preventDefault(); stepMove(1n); break;
+            case 'ArrowLeft': e.preventDefault(); stepMove(-1n); break;
+            case 'r': case 'R': e.preventDefault(); resetPosition(); break;
+            case 'l': case 'L': e.preventDefault(); isLooping = !isLooping; updateLoopBtn(); break;
+            case 'f': case 'F': e.preventDefault(); toggleFullscreen(); break;
+        }
+    });
+
+    (function init() {
+        rangeStart = parseBigInt(rangeStartInput, 1n);
+        rangeEnd = parseBigInt(rangeEndInput, 100n);
+        currentValue = isReversed ? rangeEnd : rangeStart;
+        step = parseBigInt(stepInput, 1n);
+        fps = parseFloat(rateSlider.value) || 10;
+        rateDisplay.textContent = fps + ' fps';
+        buildColorChips();
+        updateDisplay(currentValue, null);
+        updatePlayBtn(); updateCardState(); updateLoopBtn(); updateReverseBtn(); updatePresetBtns();
+        displayCard.classList.add('paused');
+    })();
+
+    window.addEventListener('beforeunload', () => { clearTimeout(timerId); isPlaying = false; });
+})();
+</script>
+</body>
+</html>
