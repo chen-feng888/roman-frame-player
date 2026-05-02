@@ -49,4 +49,4 @@
 
 ## 📄 许可
 
-MIT License © 2025
+MIT License © 2026
